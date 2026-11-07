@@ -13,7 +13,15 @@ A tiny menu-bar app that plays any video as a looping, animated desktop wallpape
 - Remembers your last video
 - No Dock icon
 
-## Build
+## Download
+1. Get **LiveWallpaper-macOS.zip** from the [latest release](https://github.com/tenzerodev/LiveWallpaper/releases/latest).
+2. Unzip it and drag **LiveWallpaper.app** into Applications.
+3. The first time, **right-click → Open → Open** (the app isn't notarized by Apple).
+   If macOS says it's damaged or won't open, run: `xattr -cr /Applications/LiveWallpaper.app`
+
+Works on Apple Silicon and Intel Macs, macOS 13 Ventura or later.
+
+## Build from source
 Requires macOS 13+ and Xcode Command Line Tools (`xcode-select --install`).
 
 ```bash

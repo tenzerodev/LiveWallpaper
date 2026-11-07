@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds LiveWallpaper.app from the Swift package and reveals it in Finder.
 # Requires Xcode Command Line Tools:  xcode-select --install
+# UNIVERSAL=1 bash build.sh  → Apple Silicon + Intel build (needs full Xcode; used by GitHub releases)
 set -eo pipefail
 cd "$(dirname "$0")"
 
@@ -10,13 +11,17 @@ if ! command -v swift >/dev/null 2>&1; then
 fi
 
 echo "▶ Building (this takes ~1 minute the first time)…"
-if ! swift build -c release; then
-  echo ""
-  echo "❌ Build failed. Copy everything above this line and send it to Claude."
-  exit 1
+if [ "${UNIVERSAL:-0}" = "1" ]; then
+  swift build -c release --arch arm64 --arch x86_64
+  BIN=".build/apple/Products/Release/LiveWallpaper"
+else
+  if ! swift build -c release; then
+    echo ""
+    echo "❌ Build failed. Copy everything above this line and send it to Claude."
+    exit 1
+  fi
+  BIN="$(swift build -c release --show-bin-path)/LiveWallpaper"
 fi
-
-BIN="$(swift build -c release --show-bin-path)/LiveWallpaper"
 APP="$(pwd)/LiveWallpaper.app"
 
 echo "▶ Packaging…"
@@ -47,5 +52,7 @@ codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
 echo ""
 echo "✅ Done: $APP"
-echo "   (Finder may show it just as \"LiveWallpaper\" with an app icon.)"
-open -R "$APP"
+if [ -z "${CI:-}" ]; then
+  echo "   (Finder may show it just as \"LiveWallpaper\" with an app icon.)"
+  open -R "$APP"
+fi
