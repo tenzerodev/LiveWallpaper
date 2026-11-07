@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+*.app
+*.mp4
+*.mov
+.DS_Store
+xcuserdata/
