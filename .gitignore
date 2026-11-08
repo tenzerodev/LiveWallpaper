@@ -5,3 +5,6 @@
 *.mov
 .DS_Store
 xcuserdata/
+bin/
+obj/
+publish/

@@ -13,7 +13,7 @@ A tiny menu-bar app that plays any video as a looping, animated desktop wallpape
 - Remembers your last video
 - No Dock icon
 
-## Download
+## Download (Mac)
 1. Get **LiveWallpaper-macOS.zip** from the [latest release](https://github.com/tenzerodev/LiveWallpaper/releases/latest).
 2. Unzip it and drag **LiveWallpaper.app** into Applications.
 3. The first time, **right-click → Open → Open** (the app isn't notarized by Apple).
@@ -21,7 +21,16 @@ A tiny menu-bar app that plays any video as a looping, animated desktop wallpape
 
 Works on Apple Silicon and Intel Macs, macOS 13 Ventura or later.
 
-## Build from source
+## Windows
+1. Get **LiveWallpaper-Windows.zip** from the [latest release](https://github.com/tenzerodev/LiveWallpaper/releases/latest) and unzip it.
+2. Run **LiveWallpaper.exe**. If SmartScreen says "Windows protected your PC", click **More info → Run anyway** (the app isn't code-signed).
+3. Pick a video. The tray icon (bottom-right, near the clock) has Choose Video, Per Screen, Pause, and Start with Windows.
+
+- Works on Windows 10 and 11 (64-bit). MP4 (H.264) plays everywhere; HEVC needs Microsoft's HEVC extension.
+- Pauses automatically when the PC is locked or a game/app is full screen.
+- Source is in [`windows/`](windows) (C# / .NET 8).
+
+## Build from source (Mac)
 Requires macOS 13+ and Xcode Command Line Tools (`xcode-select --install`).
 
 ```bash
