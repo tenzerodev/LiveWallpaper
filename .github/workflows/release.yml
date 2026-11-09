@@ -9,10 +9,10 @@ on:
       version:
         description: 'Version to publish (e.g. v1.1.0)'
         required: true
-        default: 'v1.1.0'
+        default: 'v1.2.0'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   macos:
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build universal app (Apple Silicon + Intel)
-        run: UNIVERSAL=1 bash build.sh
+        run: UNIVERSAL=1 VERSION="${{ inputs.version || 'v1.2.0' }}" bash build.sh
       - name: Zip
         run: ditto -c -k --keepParent LiveWallpaper.app LiveWallpaper-macOS.zip
       - uses: actions/upload-artifact@v4
@@ -48,6 +48,8 @@ jobs:
 
   release:
     needs: [macos, windows]
+    permissions:
+      contents: write
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:

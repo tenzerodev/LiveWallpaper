@@ -3,6 +3,7 @@
 # Requires Xcode Command Line Tools:  xcode-select --install
 # UNIVERSAL=1 bash build.sh  → Apple Silicon + Intel build (needs full Xcode; used by GitHub releases)
 set -eo pipefail
+VERSION="${VERSION:-1.2.0}"; VERSION="${VERSION#v}"   # the app version shown in Finder
 cd "$(dirname "$0")"
 
 if ! command -v swift >/dev/null 2>&1; then
@@ -17,7 +18,7 @@ if [ "${UNIVERSAL:-0}" = "1" ]; then
 else
   if ! swift build -c release; then
     echo ""
-    echo "❌ Build failed. Copy everything above this line and send it to Claude."
+    echo "❌ Build failed. Copy everything above this line and open an issue at https://github.com/tenzerodev/LiveWallpaper/issues with it."
     exit 1
   fi
   BIN="$(swift build -c release --show-bin-path)/LiveWallpaper"
@@ -29,7 +30,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/LiveWallpaper"
 
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -40,7 +41,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key>       <string>LiveWallpaper</string>
     <key>CFBundlePackageType</key>      <string>APPL</string>
     <key>CFBundleVersion</key>          <string>1</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>LSMinimumSystemVersion</key>   <string>13.0</string>
     <key>LSUIElement</key>              <true/>
     <key>NSHighResolutionCapable</key>  <true/>

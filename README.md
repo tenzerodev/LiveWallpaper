@@ -16,7 +16,9 @@ A tiny menu-bar app that plays any video as a looping, animated desktop wallpape
 ## Download (Mac)
 1. Get **LiveWallpaper-macOS.zip** from the [latest release](https://github.com/tenzerodev/LiveWallpaper/releases/latest).
 2. Unzip it and drag **LiveWallpaper.app** into Applications.
-3. The first time, **right-click → Open → Open** (the app isn't notarized by Apple).
+3. The first time, double-click it. macOS will say it can't check the app (it isn't notarized by Apple):
+   click **Done**, then go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+   On macOS 14 or earlier, **right-click → Open → Open** also works.
    If macOS says it's damaged or won't open, run: `xattr -cr /Applications/LiveWallpaper.app`
 
 Works on Apple Silicon and Intel Macs, macOS 13 Ventura or later.
@@ -39,7 +41,7 @@ cd LiveWallpaper && bash build.sh
 ```
 
 Then drag `LiveWallpaper.app` into **Applications** and open it.
-The first time, right-click → **Open** (it's ad-hoc signed, not notarized).
+The first time, macOS may block it because it isn't notarized: use **System Settings → Privacy & Security → Open Anyway**.
 
 Quick dev run without bundling: `swift run`
 

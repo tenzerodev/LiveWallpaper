@@ -35,7 +35,7 @@ final class WallpaperWindow: NSWindow {
     }
 }
 
-// MARK: - One looping player per screen
+// MARK: - One looping player per video file (screens showing the same video share it)
 
 final class ScreenPlayer {
     let player = AVQueuePlayer()
@@ -74,6 +74,17 @@ extension NSScreen {
         let tail = serial != 0 ? "\(serial)" : "u\(CGDisplayUnitNumber(id))"
         return "\(CGDisplayVendorNumber(id))-\(CGDisplayModelNumber(id))-\(tail)"
     }
+
+    /// Every connected screen with an ID that's unique even when two identical monitors report the same serial number.
+    static var screensWithIDs: [(screen: NSScreen, id: String)] {
+        var seen = Set<String>()
+        return screens.map { screen in
+            var id = screen.stableID
+            if seen.contains(id) { id += "-d\(screen.displayID)" }
+            seen.insert(id)
+            return (screen, id)
+        }
+    }
 }
 
 // MARK: - App
@@ -82,10 +93,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
 
     private var windows: [String: WallpaperWindow] = [:]
-    private var players: [String: ScreenPlayer] = [:]
+    private var players: [String: ScreenPlayer] = [:]   // by video path
 
     private var userPaused = false
-    private var systemPaused = false
+    // Kept apart so waking the computer doesn't start the video behind the lock screen.
+    private var locked = false
+    private var displaysAsleep = false
+    private var systemAsleep = false
 
     private let defaultVideoKey = "videoPath"        // video used by every screen without its own
     private let screenVideosKey = "screenVideos"     // [screenID: path] per-screen choices
@@ -124,21 +138,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
-        // Save battery: pause when displays sleep or the screen locks.
+        // Save battery: pause when displays sleep, the computer sleeps or the screen locks.
         let ws = NSWorkspace.shared.notificationCenter
-        ws.addObserver(self, selector: #selector(systemPause),
+        ws.addObserver(self, selector: #selector(displaysDidSleep),
                        name: NSWorkspace.screensDidSleepNotification, object: nil)
-        ws.addObserver(self, selector: #selector(systemResume),
+        ws.addObserver(self, selector: #selector(displaysDidWake),
                        name: NSWorkspace.screensDidWakeNotification, object: nil)
-        ws.addObserver(self, selector: #selector(systemPause),
+        ws.addObserver(self, selector: #selector(systemWillSleep),
                        name: NSWorkspace.willSleepNotification, object: nil)
-        ws.addObserver(self, selector: #selector(systemResume),
+        ws.addObserver(self, selector: #selector(systemDidWake),
                        name: NSWorkspace.didWakeNotification, object: nil)
 
         let dnc = DistributedNotificationCenter.default()
-        dnc.addObserver(self, selector: #selector(systemPause),
+        dnc.addObserver(self, selector: #selector(screenLocked),
                         name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
-        dnc.addObserver(self, selector: #selector(systemResume),
+        dnc.addObserver(self, selector: #selector(screenUnlocked),
                         name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
     }
 
@@ -156,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let screens = NSScreen.screens
+        let screens = NSScreen.screensWithIDs
         let allTitle = screens.count > 1 ? "Choose Video for All Screens…" : "Choose Video…"
         add(to: menu, allTitle, #selector(chooseVideoForAll), key: "o")
 
@@ -166,11 +180,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             header.isEnabled = false
             menu.addItem(header)
 
-            for (index, screen) in screens.enumerated() {
-                let id = screen.stableID
+            for (index, (screen, id)) in screens.enumerated() {
                 let current = video(for: id)?.lastPathComponent ?? "no video"
                 let custom = screenVideos[id] != nil
-                let name = screenName(screen, index: index, in: screens)
+                let name = screenName(screen, index: index, in: screens.map(\.screen))
 
                 let item = add(to: menu, "\(name) — \(current)…", #selector(chooseVideoForScreen(_:)))
                 item.representedObject = id
@@ -212,36 +225,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Windows & players
 
+    /// One window per screen that has a video. A screen without one keeps its normal wallpaper instead of going black.
     private func rebuildWindows() {
         windows.values.forEach { $0.orderOut(nil) }
         windows.removeAll()
 
-        var activeIDs = Set<String>()
-        for screen in NSScreen.screens {
-            let id = screen.stableID
-            activeIDs.insert(id)
+        var usedVideos = Set<String>()
+        for (screen, id) in NSScreen.screensWithIDs {
+            guard let url = video(for: id) else { continue }
+            usedVideos.insert(url.path)
 
-            let sp = players[id] ?? ScreenPlayer()
-            players[id] = sp
-            sp.load(video(for: id))
+            let sp = players[url.path] ?? ScreenPlayer()
+            players[url.path] = sp
+            sp.load(url)
 
             let w = WallpaperWindow(for: screen, player: sp.player)
             w.orderBack(nil)
             windows[id] = w
         }
 
-        // Drop players for monitors that were unplugged.
-        for id in players.keys where !activeIDs.contains(id) {
-            players[id]?.load(nil)
-            players[id] = nil
+        // Stop players no screen shows any more.
+        for path in players.keys where !usedVideos.contains(path) {
+            players[path]?.load(nil)
+            players[path] = nil
         }
         updatePlayback()
     }
 
-    private func reloadAllPlayers() {
-        for (id, sp) in players { sp.load(video(for: id)) }
-        updatePlayback()
-    }
+    private func reloadAllPlayers() { rebuildWindows() }
 
     @objc private func screensChanged() { rebuildWindows() }
 
@@ -268,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func chooseVideoForScreen(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        let name = NSScreen.screens.first { $0.stableID == id }?.localizedName ?? "this screen"
+        let name = NSScreen.screensWithIDs.first { $0.id == id }?.screen.localizedName ?? "this screen"
         guard let url = pickVideo(title: "Choose a video for \(name)") else { return }
         var map = screenVideos
         map[id] = url.path
@@ -287,7 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Playback
 
     private func updatePlayback() {
-        let paused = userPaused || systemPaused
+        let paused = userPaused || locked || displaysAsleep || systemAsleep
         for sp in players.values {
             if paused { sp.player.pause() } else { sp.player.play() }
         }
@@ -298,15 +309,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updatePlayback()
     }
 
-    @objc private func systemPause() {
-        systemPaused = true
-        updatePlayback()
-    }
-
-    @objc private func systemResume() {
-        systemPaused = false
-        updatePlayback()
-    }
+    @objc private func screenLocked() { locked = true; updatePlayback() }
+    @objc private func screenUnlocked() { locked = false; updatePlayback() }
+    @objc private func displaysDidSleep() { displaysAsleep = true; updatePlayback() }
+    @objc private func displaysDidWake() { displaysAsleep = false; updatePlayback() }
+    @objc private func systemWillSleep() { systemAsleep = true; updatePlayback() }
+    @objc private func systemDidWake() { systemAsleep = false; updatePlayback() }
 
     // MARK: Login item
 

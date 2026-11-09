@@ -122,6 +122,15 @@ sealed class WallpaperWindow : Window
         if (!playing) media.Pause();
     }
 
+    /// Stops and frees the video before closing. Closing alone leaves a manual-unload player decoding in the background.
+    public void Shutdown()
+    {
+        media.Stop();
+        media.Close();
+        media.Source = null;
+        Close();
+    }
+
     public void SetPlaying(bool play)
     {
         playing = play;
@@ -143,7 +152,8 @@ sealed class WallpaperController
     readonly DispatcherTimer watchdog;
     IntPtr host;
 
-    bool userPaused, sessionPaused, fullscreenPaused;
+    // Kept apart so waking the PC doesn't start the video behind the lock screen.
+    bool userPaused, locked, suspended, fullscreenPaused;
 
     public WallpaperController(Application app)
     {
@@ -170,14 +180,14 @@ sealed class WallpaperController
         SystemEvents.DisplaySettingsChanged += (_, _) => OnUi(Rebuild);
         SystemEvents.SessionSwitch += (_, e) => OnUi(() =>
         {
-            if (e.Reason == SessionSwitchReason.SessionLock) sessionPaused = true;
-            if (e.Reason == SessionSwitchReason.SessionUnlock) sessionPaused = false;
+            if (e.Reason == SessionSwitchReason.SessionLock) locked = true;
+            if (e.Reason == SessionSwitchReason.SessionUnlock) locked = false;
             UpdatePlayback();
         });
         SystemEvents.PowerModeChanged += (_, e) => OnUi(() =>
         {
-            if (e.Mode == PowerModes.Suspend) sessionPaused = true;
-            if (e.Mode == PowerModes.Resume) { sessionPaused = false; Rebuild(); }
+            if (e.Mode == PowerModes.Suspend) suspended = true;
+            if (e.Mode == PowerModes.Resume) { suspended = false; Rebuild(); }
             UpdatePlayback();
         });
 
@@ -204,9 +214,10 @@ sealed class WallpaperController
     string? VideoFor(string screenId) =>
         Existing(settings.ScreenVideos.GetValueOrDefault(screenId)) ?? Existing(settings.DefaultVideo);
 
+    /// One window per monitor that has a video. A monitor without one keeps its normal wallpaper instead of going black.
     void Rebuild()
     {
-        foreach (var w in windows.Values) w.Close();
+        foreach (var w in windows.Values) w.Shutdown();
         windows.Clear();
 
         host = DesktopHost.Find();
@@ -214,23 +225,20 @@ sealed class WallpaperController
 
         foreach (var screen in Forms.Screen.AllScreens)
         {
+            if (VideoFor(screen.DeviceName) is not string video) continue;
             var w = new WallpaperWindow();
             w.AttachTo(host, screen.Bounds);
-            w.Load(VideoFor(screen.DeviceName));
+            w.Load(video);
             windows[screen.DeviceName] = w;
         }
         UpdatePlayback();
     }
 
-    void ReloadAll()
-    {
-        foreach (var (id, w) in windows) w.Load(VideoFor(id));
-        UpdatePlayback();
-    }
+    void ReloadAll() => Rebuild();
 
     void UpdatePlayback()
     {
-        bool play = !(userPaused || sessionPaused || fullscreenPaused);
+        bool play = !(userPaused || locked || suspended || fullscreenPaused);
         foreach (var w in windows.Values) w.SetPlaying(play);
     }
 
@@ -328,11 +336,11 @@ sealed class WallpaperController
     void Quit()
     {
         watchdog.Stop();
-        foreach (var w in windows.Values) w.Close();
+        foreach (var w in windows.Values) w.Shutdown();
         windows.Clear();
         tray.Visible = false;
         tray.Dispose();
-        Native.RefreshDesktopWallpaper();   // repaint the normal wallpaper
+        Native.RepaintDesktop(host);   // show the normal wallpaper again, without touching slideshow or Spotlight settings
         app.Shutdown();
     }
 }
@@ -446,7 +454,6 @@ static class Native
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder name, int max);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfo(uint action, uint param, StringBuilder? value, uint winIni);
 
     public static bool ForegroundIsFullscreen()
     {
@@ -460,11 +467,13 @@ static class Native
         return r.Left <= s.Left && r.Top <= s.Top && r.Right >= s.Right && r.Bottom >= s.Bottom;
     }
 
-    public static void RefreshDesktopWallpaper()
+    [DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr hwnd, IntPtr rect, IntPtr region, uint flags);
+
+    public static void RepaintDesktop(IntPtr host)
     {
-        const uint SPI_GETDESKWALLPAPER = 0x73, SPI_SETDESKWALLPAPER = 0x14, SPIF_SENDCHANGE = 0x2;
-        var path = new StringBuilder(520);
-        SystemParametersInfo(SPI_GETDESKWALLPAPER, (uint)path.Capacity, path, 0);
-        SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, path, SPIF_SENDCHANGE);
+        const uint RDW_INVALIDATE = 0x1, RDW_ERASE = 0x4, RDW_ALLCHILDREN = 0x80, RDW_UPDATENOW = 0x100;
+        const uint flags = RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW;
+        if (host != IntPtr.Zero) RedrawWindow(host, IntPtr.Zero, IntPtr.Zero, flags);
+        RedrawWindow(FindWindow("Progman", null), IntPtr.Zero, IntPtr.Zero, flags);
     }
 }
