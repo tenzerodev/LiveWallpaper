@@ -12,6 +12,8 @@ A tiny menu-bar app that plays any video as a looping, animated desktop wallpape
 - Menu bar controls: Choose Video, Pause/Resume, Launch at Login, Quit
 - Remembers your last video
 - No Dock icon
+- **Lock screen (macOS 26+):** menu → Lock Screen puts your video on the lock screen and screen saver too
+
 
 ## Download (Mac)
 1. Get **LiveWallpaper-macOS.zip** from the [latest release](https://github.com/tenzerodev/LiveWallpaper/releases/latest).
@@ -22,6 +24,17 @@ A tiny menu-bar app that plays any video as a looping, animated desktop wallpape
    If macOS says it's damaged or won't open, run: `xattr -cr /Applications/LiveWallpaper.app`
 
 Works on Apple Silicon and Intel Macs, macOS 13 Ventura or later.
+
+## Lock screen (Mac, macOS 26 or later)
+Apps can't draw on the macOS lock screen, but macOS plays its own "Aerial" wallpapers there.
+**Lock Screen → Use Current Video on Lock Screen** adds your video as an Aerial (it shows up in
+System Settings → Wallpaper under "Live Wallpaper"), selects it for every display, and uses it as
+the screen saver. No admin password needed.
+
+- Your previous wallpaper settings are backed up; **Lock Screen → Remove from Lock Screen** restores them.
+- This uses an undocumented part of macOS, so a future macOS update could break it.
+- Not available on Windows: its lock screen only supports still images.
+- Approach adapted from [LivePaper](https://github.com/Raunik2/LivePaper) by Raunak Gupta (MIT License).
 
 ## Windows
 1. Get **LiveWallpaper-Windows.zip** from the [latest release](https://github.com/tenzerodev/LiveWallpaper/releases/latest) and unzip it.

@@ -202,6 +202,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(to: menu, userPaused ? "Resume" : "Pause", #selector(togglePause), key: "p")
 
         menu.addItem(.separator())
+        menu.addItem(lockScreenMenu())
+
+        menu.addItem(.separator())
         let login = add(to: menu, "Launch at Login", #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
 
@@ -315,6 +318,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func displaysDidWake() { displaysAsleep = false; updatePlayback() }
     @objc private func systemWillSleep() { systemAsleep = true; updatePlayback() }
     @objc private func systemDidWake() { systemAsleep = false; updatePlayback() }
+
+    // MARK: Lock screen
+
+    private var currentVideo: URL? {
+        if let main = NSScreen.screensWithIDs.first(where: { $0.screen == NSScreen.main }), let url = video(for: main.id) {
+            return url
+        }
+        return defaultVideo ?? NSScreen.screensWithIDs.lazy.compactMap { self.video(for: $0.id) }.first
+    }
+
+    private func lockScreenMenu() -> NSMenuItem {
+        let item = NSMenuItem(title: "Lock Screen", action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        let lock = LockScreenAerial.shared
+
+        func info(_ text: String) {
+            let i = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+            i.isEnabled = false
+            sub.addItem(i)
+        }
+
+        if !lock.isSupported {
+            info("Needs macOS 26 or later")
+        } else {
+            info(lock.currentVideoName.map { "Showing: \($0)" } ?? "Not set")
+            let use = add(to: sub, "Use Current Video on Lock Screen", #selector(useCurrentVideoOnLockScreen))
+            use.isEnabled = currentVideo != nil
+            add(to: sub, "Choose Video for Lock Screen…", #selector(chooseVideoForLockScreen))
+            if lock.currentVideoName != nil {
+                sub.addItem(.separator())
+                add(to: sub, "Remove from Lock Screen", #selector(removeFromLockScreen))
+            }
+        }
+        item.submenu = sub
+        return item
+    }
+
+    @objc private func useCurrentVideoOnLockScreen() {
+        guard let url = currentVideo else { return }
+        setLockScreen(url)
+    }
+
+    @objc private func chooseVideoForLockScreen() {
+        guard let url = pickVideo(title: "Choose a video for the lock screen") else { return }
+        setLockScreen(url)
+    }
+
+    private func setLockScreen(_ url: URL) {
+        LockScreenAerial.shared.install(video: url) { error in
+            let alert = NSAlert()
+            if let error {
+                alert.alertStyle = .warning
+                alert.messageText = "Couldn't put the video on the lock screen"
+                alert.informativeText = error.localizedDescription
+            } else {
+                alert.messageText = "Lock screen updated"
+                alert.informativeText = """
+                “\(url.lastPathComponent)” will now play on the lock screen and as the screen saver.
+
+                Lock your Mac (Control-Command-Q) to see it. It also appears in System Settings → Wallpaper under “Live Wallpaper”.
+
+                To undo: Lock Screen → Remove from Lock Screen. Your previous wallpaper settings are restored.
+                """
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+    }
+
+    @objc private func removeFromLockScreen() {
+        LockScreenAerial.shared.remove()
+    }
 
     // MARK: Login item
 
